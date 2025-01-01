@@ -16,41 +16,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   return books;
 }
 
-const r2 = new R2Client({
-  accountId: process.env.CF_ACCOUNT_ID!,
-  accessKeyId: process.env.CF_ACCESS_KEY_ID!,
-  secretAccessKey: process.env.CF_SECRET_ACCESS_KEY!,
-});
-
-const bucket = r2.bucket(process.env.CF_BUCKET_NAME!);
-
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const fileName = formData.get("id") + "." + formData.get("extension");
-  const filePath = `./public/books/${fileName}`;
-
-  try {
-    await bucket.head(fileName);
-    return redirect("/chat/" + fileName);
-  } catch (error) {
-    if (error.code !== "NotFound") {
-      throw error;
-    }
-    // File not found in R2, continue with download
-  }
-
-  const response = await fetch(`https://z-lib.gs/book/${splat}`);
-  const body = await response.text();
-  await fs.writeFile("debug.html", body);
-
-  const dom = new JSDOM(body);
-  const downloadLink = dom.window.document.querySelector(".addDownloadedBook");
-  const downloadUrl = downloadLink?.getAttribute("href");
-
-  const pdfResponse = await fetch("https://z-lib.gs" + downloadUrl);
-  const pdfBuffer = await pdfResponse.arrayBuffer();
-
-  await fs.writeFile(filePath, Buffer.from(pdfBuffer));
   return redirect(`/chat/${fileName}`);
 }
 
@@ -77,7 +45,7 @@ export default function Search() {
                   />
                   <input type="hidden" name="href" value={book.href} />
                   <div className="rounded-lg border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <div className="p-4 flex items-start space-x-4">
+                    <button className="p-4 flex items-start space-x-4">
                       {book.img && (
                         <img
                           src={
@@ -124,7 +92,7 @@ export default function Search() {
                           </p>
                         )}
                       </div>
-                    </div>
+                    </button>
                   </div>
                 </Form>
               ))
