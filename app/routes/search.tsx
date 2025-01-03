@@ -1,6 +1,5 @@
 import { Form, redirect, useLoaderData, useNavigation } from "@remix-run/react";
 import { extractText, getDocumentProxy } from "unpdf";
-import { parseEpub } from "epub-parser-simple";
 import { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/cloudflare";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -10,7 +9,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const response = await fetch(
     `https://z-lib.gs/s/${encodeURIComponent(
       query
-    )}?extensions%5B0%5D=PDF&extensions%5B1%5D=EPUB`
+    )}?extensions%5B0%5D=PDF`
   );
 
   const body = await response.text();
@@ -41,7 +40,7 @@ export async function action({ context, request }: ActionFunctionArgs) {
   const downloadPath = match![1];
   const downloadResponse = await fetch("https://z-lib.gs/" + downloadPath);
   const downloadBuffer = await downloadResponse.arrayBuffer();
-  const text = await (extension === "pdf" ? extractPdf(downloadBuffer) : extractEpub(downloadBuffer));
+  const text = await extractPdf(downloadBuffer);
 
   const cache = await BUCKET.put(id + "." + extension, downloadBuffer);
   console.log("cached", cache?.key);
@@ -54,12 +53,6 @@ export async function action({ context, request }: ActionFunctionArgs) {
 async function extractPdf(buffer: ArrayBuffer) {
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const { text } = await extractText(pdf, { mergePages: true });
-  return text!;
-}
-
-async function extractEpub(buffer: ArrayBuffer) {
-  const epubObj = await parseEpub(Buffer.from(buffer));
-  const text = epubObj.sections?.map(section => section.parsed_data.map(data => data.value).join("\n")).join("\n\n");
   return text!;
 }
 
