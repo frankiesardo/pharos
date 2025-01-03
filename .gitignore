@@ -1,8 +1,10 @@
-node_modules
+.DS_Store
+/node_modules/
 
-/.cache
-/build
-.env
-.dev.vars
+# React Router
+/.react-router/
+/build/
 
+# Cloudflare
+.mf
 .wrangler
