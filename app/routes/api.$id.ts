@@ -2,14 +2,15 @@ import { ActionFunctionArgs } from "@remix-run/cloudflare";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { streamText, Message, CoreMessage } from "ai";
 
-const openai = createOpenAICompatible({
-  name: "openai-proxy",
-  baseURL: `${process.env.OPENAI_API_BASE_URL}`,
-  headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-});
-
 export async function action({ request, params, context }: ActionFunctionArgs) {
-  const { BUCKET } = context.cloudflare.env;
+  const { BUCKET, OPENAI_API_BASE_URL, OPENAI_API_KEY } = context.cloudflare.env;
+
+  const openai = createOpenAICompatible({
+    name: "openai-proxy",
+    baseURL: `${OPENAI_API_BASE_URL}`,
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+  });
+
   const { messages } = await request.json<{ messages: Message[] }>();
   const { id } = params;
   const key = id + ".txt"
