@@ -1,7 +1,9 @@
-import { Form, redirect, useLoaderData } from "react-router";
-import type { Route } from "./+types/search";
+import { Form, redirect, useLoaderData, useNavigation } from "@remix-run/react";
+import { extractText, getDocumentProxy } from "unpdf";
+import { parseEpub } from "epub-parser-simple";
+import { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/cloudflare";
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const query = url.searchParams.get("q") || "";
 
@@ -16,16 +18,63 @@ export async function loader({ request }: Route.LoaderArgs) {
   return books;
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ context, request }: ActionFunctionArgs) {
+  const { BUCKET } = context.cloudflare.env;
   const formData = await request.formData();
-  const fileName = formData.get("id") + "." + formData.get("extension");
-  return redirect(`/chat/${fileName}`);
+  const id = formData.get("id")
+  const extension = formData.get("extension")
+  const key = id + ".txt"
+
+  if (await BUCKET.get(key)) {
+    console.log("hit", key)
+    return redirect("/chat/" + id);
+  }
+
+  console.log("miss", key)
+
+  const href = formData.get("href")
+  const response = await fetch("https://z-lib.gs" + href);
+  const body = await response.text();
+
+  const regex = /href="\/?(dl\/[^\/]+\/[^"]+)"/;
+  const match = body.match(regex);
+  const downloadPath = match![1];
+  const downloadResponse = await fetch("https://z-lib.gs/" + downloadPath);
+  const downloadBuffer = await downloadResponse.arrayBuffer();
+  const text = await (extension === "pdf" ? extractPdf(downloadBuffer) : extractEpub(downloadBuffer));
+
+  const cache = await BUCKET.put(id + "." + extension, downloadBuffer);
+  console.log("cached", cache?.key);
+  const book = await BUCKET.put(key, text);
+  console.log("stored", book?.key);
+
+  return redirect("/chat/" + id);
+}
+
+async function extractPdf(buffer: ArrayBuffer) {
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const { text } = await extractText(pdf, { mergePages: true });
+  return text!;
+}
+
+async function extractEpub(buffer: ArrayBuffer) {
+  const epubObj = await parseEpub(Buffer.from(buffer));
+  const text = epubObj.sections?.map(section => section.parsed_data.map(data => data.value).join("\n")).join("\n\n");
+  return text!;
 }
 
 export default function Search() {
   const books = useLoaderData<typeof loader>();
+  const navigation = useNavigation();
+  const isNavigating = Boolean(navigation.location);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 md:p-24">
+    <div className="flex flex-col items-center justify-center p-4 md:p-24">
+      {isNavigating && (
+        <div className="absolute inset-0 bg-white bg-opacity-50 flex items-center justify-center z-10">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      )}
       <div className="w-full max-w-md md:max-w-4xl">
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Search Results</h2>
@@ -44,63 +93,65 @@ export default function Search() {
                     value={book.extension}
                   />
                   <input type="hidden" name="href" value={book.href} />
-                  <div className="rounded-lg border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <button className="p-4 flex items-start space-x-4">
-                      {book.img && (
-                        <img
-                          src={
-                            book.img === "/img/cover-not-exists.png"
-                              ? "https://z-lib.gs/img/cover-not-exists.png"
-                              : book.img
-                          }
-                          alt={book.title || "Book cover"}
-                          width={80}
-                          height={120}
-                          className="object-cover rounded-sm"
-                        />
-                      )}
-                      <div className="flex-1 space-y-2">
-                        <div>
-                          <h3 className="font-semibold">{book.title}</h3>
-                          <p className="text-sm text-gray-600">{book.author}</p>
-                          <p className="text-sm text-gray-500">
-                            {book.publisher} • {book.year}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {book.language && (
-                            <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors bg-secondary text-secondary-foreground">
-                              {book.language}
-                            </div>
-                          )}
-                          {book.filesize && (
-                            <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors">
-                              {book.filesize}
-                            </div>
-                          )}
-                          {book.extension && (
-                            <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors">
-                              {book.extension}
-                            </div>
-                          )}
-                        </div>
-
-                        {book.note && (
-                          <p className="text-sm text-muted-foreground">
-                            {book.note}
-                          </p>
+                  <button type="submit" className="w-full text-left">
+                    <div className="rounded-lg border bg-card shadow-sm hover:shadow-md transition-shadow">
+                      <div className="p-4 flex items-start space-x-4">
+                        {book.img && (
+                          <img
+                            src={
+                              book.img === "/img/cover-not-exists.png"
+                                ? "https://z-lib.gs/img/cover-not-exists.png"
+                                : book.img
+                            }
+                            alt={book.title || "Book cover"}
+                            width={80}
+                            height={120}
+                            className="object-cover rounded-sm"
+                          />
                         )}
+                        <div className="flex-1 space-y-2">
+                          <div>
+                            <h3 className="font-semibold">{book.title}</h3>
+                            <p className="text-sm text-gray-600">{book.author}</p>
+                            <p className="text-sm text-gray-500">
+                              {book.publisher} • {book.year !== "0" && book.year}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {book.language && (
+                              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors bg-secondary text-secondary-foreground">
+                                {book.language}
+                              </div>
+                            )}
+                            {book.filesize && (
+                              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors">
+                                {book.filesize}
+                              </div>
+                            )}
+                            {book.extension && (
+                              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors">
+                                {book.extension}
+                              </div>
+                            )}
+                          </div>
+
+                          {book.note && (
+                            <p className="text-sm text-muted-foreground">
+                              {book.note}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </button>
-                  </div>
+                    </div>
+                  </button>
                 </Form>
               ))
             )}
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -151,7 +202,7 @@ function parseBooks(html: string): Book[] {
 
     for (const attr of attributes) {
       const match = part.match(new RegExp(`${attr}="([^"]*)"`));
-      if (match) book[attr] = match[1];
+      if (match) book[attr] = unescape(match[1])
     }
 
     // Extract content fields
@@ -164,11 +215,15 @@ function parseBooks(html: string): Book[] {
 
     for (const [field, pattern] of Object.entries(contentFields)) {
       const match = part.match(new RegExp(pattern));
-      if (match) book[field] = match[1].trim();
+      if (match) book[field] = unescape(match[1].trim());
     }
 
     books.push(book);
   }
 
   return books;
+}
+
+function unescape(s: string) {
+  return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");;
 }

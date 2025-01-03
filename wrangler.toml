@@ -1,5 +1,3 @@
-workers_dev = true
-name = "my-worker"
-compatibility_date = "2024-11-18"
-main = "./build/server/index.js"
-assets = { directory = "./build/client/" }
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "books"

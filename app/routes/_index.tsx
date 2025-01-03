@@ -1,20 +1,19 @@
-import { Form } from "react-router";
-import type { Route } from "./+types/home";
+import type { MetaFunction } from "@remix-run/cloudflare";
+import { Form, useNavigation } from "@remix-run/react";
 
-export function meta({}: Route.MetaArgs) {
+export const meta: MetaFunction = () => {
   return [
-    { title: "New React Router App" },
-    { name: "description", content: "Welcome to React Router!" },
+    { title: "Pharos" },
+    { name: "description", content: "Chat with every book in the world!" },
   ];
-}
-
-export function loader({ context }: Route.LoaderArgs) {
-  return { message: context.VALUE_FROM_CLOUDFLARE };
-}
+};
 
 export default function Home() {
+  const navigation = useNavigation();
+  const isLoading = navigation.formAction === "/search"
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4 md:p-24">
+    <div className="flex flex-col items-center justify-center bg-gray-50 p-4 md:p-24">
       <div className="w-full max-w-md md:max-w-2xl">
         <div className="rounded-lg bg-white p-8 shadow-lg">
           <h1 className="mb-8 text-3xl font-bold text-center text-gray-800">
@@ -29,13 +28,17 @@ export default function Home() {
             />
             <button
               type="submit"
+              disabled={isLoading}
               className="w-full rounded-lg bg-blue-600 px-4 py-3 text-white font-medium hover:bg-blue-700 transition-colors duration-200"
             >
-              Search
+              {isLoading ? "Searching..." : "Search"}
             </button>
           </Form>
         </div>
       </div>
-    </main>
+    </div>
   );
-}
+};
+
+
+
